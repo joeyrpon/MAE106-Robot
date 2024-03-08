@@ -7,9 +7,9 @@
 LIS3MDL mag;
 LSM6 imu;
 
-// calibration parameters
-LIS3MDL::vector<int16_t> m_min = {-5145,  +4738,  +562};
-LIS3MDL::vector<int16_t> m_max = {-4976,  +4845,  +722};
+// calibration parameters  
+LIS3MDL::vector<int16_t> m_min = {-5049,  +3350,  +1300};
+LIS3MDL::vector<int16_t> m_max = {-4964,  +3429,  +1408};
 
 Servo myservo;
 
@@ -33,6 +33,10 @@ int reedOnBool = 0; // boolean to shortcircuit the reedcounter until next rotati
 long intervalPistonOff = 700;
 long intervalPistonOn = 300;
 
+// Post piston on/off time
+long postPistonOff = 800;
+long postPistonOn = 200;
+
 // Determines if piston is on or off
 int pistonState = 0;
 
@@ -49,8 +53,8 @@ float velocityThreshold = 0.3; // m/s
 
 // Hybrid loop parameters
 int c2_n_ticks_before_turn = 5;
-float c2_total_time_turning = 3;
-float c2_Kp = 3;
+float c2_total_time_turning = 3; // seconds
+float c2_Kp = 0.5;
 
 unsigned long startTimeTurning;
 
@@ -84,13 +88,39 @@ void setup() {
 
 
 }
+
+
+float headingAdjustment(float heading, float adjustment) {
+  heading = heading - adjustment + 90;
+  if (heading > 360) {
+    heading = heading - 360;
+  }
+  else if (heading < 0 ) {
+    heading = heading + 360;
+  }
+  return heading;
+}
+
+
+float belowMax(float servoValue, int maxAngle, float kp) {
   
+  if ( (90 -servoValue) * kp > maxAngle) {
+    servoValue = 90 - maxAngle;
+  }
+  else if ( (90 - servoValue) *kp < -maxAngle) {
+    servoValue = 90 + maxAngle;
+  }
+  return servoValue;
+}
+
+float getServoAngle(float direction, int maxAngle, float kp) {
+  float servoAngle = (180 - abs(180 - direction));
+  return belowMax(servoAngle,maxAngle,kp);
+}
 
 
 void loop() {
 
-
-  
 
 ////////////// MAGNETOMETER ///////////////////////////////////////////////////
 
@@ -102,45 +132,22 @@ void loop() {
   float unfilteredHeadingValue = heading;
 
   // digital low pass filter
-  float gamma = 0.75;
-  filteredHeadingValue = (1 - gamma) * unfilteredHeadingValue + gamma*filteredServoValue;
+  float gamma = 0.9;
+  filteredHeadingValue = (1 - gamma) * unfilteredHeadingValue + gamma*filteredHeadingValue;
 
-  // direction adjustment
-  float headingAdjustment = 0;
-  heading = heading - headingAdjustment;
-  if (heading > 360) {
-    heading = heading - 360;
-  }
-  else if (heading < 0 ) {
-    heading = heading + 360;
-  }
 
-  Serial.println(heading);
+  float direction = 263; // Direction to drive straight
+  float straight = headingAdjustment(filteredHeadingValue,direction);
 
-  
 
   ////////////// SERVOMOTOR ///////////////////////////////////////////////////
 
-  // 1.3 is the angle proportion
-  float servoAngle = (180 - abs(180 - filteredHeadingValue));//1.3;
-
-  
-
-  //Serial.println(filteredHeadingValue);
-  //Serial.println(servoAngle);
-  /*if (90 -filteredServoValue > maxAngle) {
-    filteredServoValue = 90 - maxAngle;
-    
-  }
-  else if (90 - filteredServoValue < -maxAngle) {
-    filteredServoValue = 90 + maxAngle;
-    
-  }*/
+  // < 90 turns the robot to the right
+  // > 90 turns robot to the left
+  float servoAngle = getServoAngle(straight,maxAngle,c2_Kp);
   
   
-
-  
-  //myservo.write(90);              // tell servo to go to position in variable 'pos'
+  //myservo.write(servoAngle);
   delay(10); 
 
 
@@ -206,16 +213,8 @@ unsigned long currentMillis = millis();
 
 
   if (velocityInterval > velocityThreshold && !velocityThresholdBool){
-
-
-    // CHANGE THESE Piston on/off time after threshold//////// 
-
-    intervalPistonOff = 800;
-    intervalPistonOn = 200;
-
-    ////////////////////////
-
-
+    intervalPistonOff = postPistonOff;
+    intervalPistonOn = postPistonOn;
     Serial.println("Passed velocity threshold");
     velocityThresholdBool = true;
   }
@@ -228,7 +227,7 @@ unsigned long currentMillis = millis();
     // straight
     case 1:
       myservo.write(90);
-      if (reedCount > c2_n_ticks_before_turn) {
+      if (reedCount >= c2_n_ticks_before_turn) {
         state = 2;
         startTimeTurning = millis();
         Serial.println("State 2");
@@ -237,7 +236,7 @@ unsigned long currentMillis = millis();
       break;
     // max turn
     case 2:
-      myservo.write(75);
+      myservo.write(90 - maxAngle);
       if (currentMillis - startTimeTurning > c2_total_time_turning * 1000){
         state = 3;
         Serial.println("State 3");
@@ -247,7 +246,7 @@ unsigned long currentMillis = millis();
     // feedback control
     case 3:
       myservo.write(servoAngle);
-      Serial.println(servoAngle);
+      Serial.println(filteredHeadingValue);
       break;
   }
 
