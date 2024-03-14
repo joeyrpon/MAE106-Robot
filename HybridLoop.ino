@@ -8,13 +8,13 @@ LIS3MDL mag;
 LSM6 imu;
 
 // calibration parameters  
-LIS3MDL::vector<int16_t> m_min = {-5049,  +3350,  +1300};
-LIS3MDL::vector<int16_t> m_max = {-4964,  +3429,  +1408};
+LIS3MDL::vector<int16_t> m_min = {+599,  +2328,  +4855};
+LIS3MDL::vector<int16_t> m_max = {+3594,  +5604,  +6274};
 
 Servo myservo;
 
 int servoPin = 3;       // Pin that the servomotor is connected to
-int solenoidPin = 2;    // Pin that the mosfet is conected to
+int solenoidPin = 2;  //2 // Pin that the mosfet is conected to
 int switchPin = 4;      // Pin that the switch is conected to
 int pos = 0;            // variable to store the servo position
 int switchState;        // variable that stores the Reed switch state
@@ -23,7 +23,7 @@ int solenoidState = LOW;  // variable that stores if solenoid is on or off
 unsigned long previousMillis = 0;        // will store last time solenoid was updated
 
 float filteredHeadingValue = 0;
-int maxAngle = 25;
+int maxAngle = 10;
 
 
 int reedCount = 0;
@@ -52,7 +52,7 @@ float velocityThreshold = 0.3; // m/s
 
 
 // Hybrid loop parameters
-int c2_n_ticks_before_turn = 5;
+int c2_n_ticks_before_turn = 12;
 float c2_total_time_turning = 3; // seconds
 float c2_Kp = 0.5;
 
@@ -132,11 +132,13 @@ void loop() {
   float unfilteredHeadingValue = heading;
 
   // digital low pass filter
-  float gamma = 0.9;
+  float gamma = 0.75;
   filteredHeadingValue = (1 - gamma) * unfilteredHeadingValue + gamma*filteredHeadingValue;
 
+  //Serial.println(filteredHeadingValue);
 
-  float direction = 263; // Direction to drive straight
+
+  float direction = 139; // Direction to drive straight
   float straight = headingAdjustment(filteredHeadingValue,direction);
 
 
@@ -226,7 +228,7 @@ unsigned long currentMillis = millis();
     
     // straight
     case 1:
-      myservo.write(90);
+      myservo.write(95);
       if (reedCount >= c2_n_ticks_before_turn) {
         state = 2;
         startTimeTurning = millis();
