@@ -7,9 +7,9 @@
 LIS3MDL mag;
 LSM6 imu;
 
-// calibration parameters  
-LIS3MDL::vector<int16_t> m_min = {+599,  +2328,  +4855};
-LIS3MDL::vector<int16_t> m_max = {+3594,  +5604,  +6274};
+// calibration parameters  min: { -6550,  +2238,   +360}   max: { -2669,  +5662,   +774}
+LIS3MDL::vector<int16_t> m_min = {-6550,  +2238,   +360};
+LIS3MDL::vector<int16_t> m_max = {-2669,  +5662,   +774};
 
 Servo myservo;
 
@@ -23,25 +23,26 @@ int solenoidState = LOW;  // variable that stores if solenoid is on or off
 unsigned long previousMillis = 0;        // will store last time solenoid was updated
 
 float filteredHeadingValue = 0;
-int maxAngle = 10;
+int maxAngle = 15;
 
 
 int reedCount = 0;
 int reedOnBool = 0; // boolean to shortcircuit the reedcounter until next rotation
 
 // Inital piston on/off time
-long intervalPistonOff = 700;
-long intervalPistonOn = 300;
+long intervalPistonOff = 425;
+long intervalPistonOn = 150;
 
 // Post piston on/off time
-long postPistonOff = 800;
-long postPistonOn = 200;
+long postPistonOff = 425; // 800
+long postPistonOn = 150; // 200
 
 // Determines if piston is on or off
 int pistonState = 0;
 
 // diameter of wheel = 68 mm
 float reedDistance = 0.2135; // distance(meters) the robot travels for each reed click
+float distanceTraveled = 0;
 unsigned long reedTime; // Time between each reed click
 float velocityInterval = 0; // velocity(m/s) between each reed click
 bool velocityThresholdBool = false; // True when robot has surpassed the velocity threshold
@@ -53,14 +54,26 @@ float velocityThreshold = 0.3; // m/s
 
 // Hybrid loop parameters
 int c2_n_ticks_before_turn = 12;
-float c2_total_time_turning = 3; // seconds
-float c2_Kp = 0.5;
+float c2_total_time_turning = 1; // seconds
+float c2_Kp = 0.2;
+
+int ticksStraight = 77;
+int ticksStartCase2;
+float totalTimeTurning2 = 1.2; // time turning towards bonus
+int ticksToBonus = 11; // ticks to go to bonus
 
 unsigned long startTimeTurning;
 
 // State for hybrid
 int state = 1;
+float direction = 145; // direction to drive straight
 
+// 145
+// 43
+float direction2 = 43; // direction towards bonus
+
+
+int running = true;
  
 
 
@@ -84,6 +97,7 @@ void setup() {
     while (1);
   }
   imu.enableDefault();
+  delay(2000);
 
 
 
@@ -91,7 +105,7 @@ void setup() {
 
 
 float headingAdjustment(float heading, float adjustment) {
-  heading = heading - adjustment + 90;
+  heading = heading - adjustment + 95;
   if (heading > 360) {
     heading = heading - 360;
   }
@@ -103,18 +117,20 @@ float headingAdjustment(float heading, float adjustment) {
 
 
 float belowMax(float servoValue, int maxAngle, float kp) {
+
+  int straight = 95;
   
-  if ( (90 -servoValue) * kp > maxAngle) {
-    servoValue = 90 - maxAngle;
+  if ( (straight -servoValue)  > maxAngle) {
+    servoValue = straight - maxAngle;
   }
-  else if ( (90 - servoValue) *kp < -maxAngle) {
-    servoValue = 90 + maxAngle;
+  else if ( (straight - servoValue) < -maxAngle) {
+    servoValue = straight + maxAngle;
   }
   return servoValue;
 }
 
 float getServoAngle(float direction, int maxAngle, float kp) {
-  float servoAngle = (180 - abs(180 - direction));
+  float servoAngle = (180 - abs(180 - direction) );
   return belowMax(servoAngle,maxAngle,kp);
 }
 
@@ -135,10 +151,10 @@ void loop() {
   float gamma = 0.75;
   filteredHeadingValue = (1 - gamma) * unfilteredHeadingValue + gamma*filteredHeadingValue;
 
-  //Serial.println(filteredHeadingValue);
+  // display heading value
+  //Serial.println(heading);
 
 
-  float direction = 139; // Direction to drive straight
   float straight = headingAdjustment(filteredHeadingValue,direction);
 
 
@@ -197,8 +213,12 @@ unsigned long currentMillis = millis();
     if (reedOnBool == 1) {
       ++reedCount;
       reedOnBool = 0;
-      Serial.print("Reed count: ");
-      Serial.println(reedCount);
+      //Serial.print("Reed count: ");
+      //Serial.println(reedCount);
+
+      //Serial.print("Distance traveled: ");
+      distanceTraveled = reedCount * reedDistance;
+      //Serial.println(distanceTraveled);
 
       unsigned long reedInterval = currentMillis - reedTime;
       reedTime = millis();
@@ -223,6 +243,10 @@ unsigned long currentMillis = millis();
 
   
 
+  if (!running) {
+    //exit(0);
+    while(1);
+  }
 
   switch (state) {
     
@@ -238,18 +262,48 @@ unsigned long currentMillis = millis();
       break;
     // max turn
     case 2:
-      myservo.write(90 - maxAngle);
+      myservo.write(80);
       if (currentMillis - startTimeTurning > c2_total_time_turning * 1000){
         state = 3;
         Serial.println("State 3");
+        ticksStartCase2 = reedCount;
       }
+      
       break;
 
     // feedback control
     case 3:
       myservo.write(servoAngle);
-      Serial.println(filteredHeadingValue);
+      Serial.println(servoAngle);
+      if (reedCount - ticksStartCase2 >= ticksStraight) {
+        state = 4;
+        Serial.println(reedCount - ticksStartCase2);
+        Serial.println("State 4");
+        direction = direction2;
+
+        startTimeTurning = millis();
+        
+      }
       break;
+
+    case 4:
+      myservo.write(105);
+      if (currentMillis - startTimeTurning > totalTimeTurning2 * 1000){
+        state = 5;
+        Serial.println("State 5");
+        ticksStartCase2 = reedCount;
+        direction = direction2;
+      }
+      break;
+    case 5:
+      myservo.write(servoAngle);
+      if (reedCount - ticksStartCase2 >= ticksToBonus) {
+        Serial.println("Done");
+        running = false;
+      }
+      break;
+
+    break;
   }
 
 }
